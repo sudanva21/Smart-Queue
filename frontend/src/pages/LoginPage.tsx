@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Loader2, Users } from 'lucide-react';
+import { Loader2, Users, Shield } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 const LoginPage = () => {
@@ -116,6 +116,24 @@ const LoginPage = () => {
                             </svg>
                         )}
                         {isSigningIn ? 'Signing in...' : 'Continue with Google'}
+                    </Button>
+
+                    <div className="relative my-6">
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-border" />
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                            <span className="bg-card px-2 text-muted-foreground">or</span>
+                        </div>
+                    </div>
+
+                    <Button
+                        variant="outline"
+                        onClick={() => navigate('/admin/login')}
+                        className="w-full h-12 rounded-2xl"
+                    >
+                        <Shield className="h-4 w-4 mr-2" />
+                        Admin Login
                     </Button>
 
                     <p className="text-xs text-muted-foreground text-center mt-6">

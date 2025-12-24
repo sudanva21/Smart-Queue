@@ -27,6 +27,8 @@ export interface Location {
   avgWaitTime: number;
   status: LocationStatus;
   position: { x: number; y: number };
+  entryQRCode?: string;
+  exitQRCode?: string;
 }
 
 export interface Ticket {
@@ -50,61 +52,8 @@ interface QueueContextType {
   getAISuggestion: () => { message: string; location: Location } | null;
   isLoading: boolean;
   seedLocations: () => Promise<void>;
+  userLocation: { id: string; name: string } | null;
 }
-
-// Initial location data for seeding
-const initialLocations: Location[] = [
-  {
-    id: 'main-canteen',
-    name: 'Main Canteen',
-    type: 'canteen',
-    currentOccupancy: 78,
-    maxCapacity: 100,
-    avgWaitTime: 12,
-    status: 'busy',
-    position: { x: 30, y: 40 },
-  },
-  {
-    id: 'central-library',
-    name: 'Central Library',
-    type: 'library',
-    currentOccupancy: 45,
-    maxCapacity: 150,
-    avgWaitTime: 5,
-    status: 'safe',
-    position: { x: 60, y: 25 },
-  },
-  {
-    id: 'admin-office',
-    name: 'Admin Office',
-    type: 'office',
-    currentOccupancy: 92,
-    maxCapacity: 100,
-    avgWaitTime: 25,
-    status: 'crowded',
-    position: { x: 45, y: 65 },
-  },
-  {
-    id: 'library-cafe',
-    name: 'Library Cafe',
-    type: 'cafe',
-    currentOccupancy: 15,
-    maxCapacity: 50,
-    avgWaitTime: 2,
-    status: 'safe',
-    position: { x: 75, y: 50 },
-  },
-  {
-    id: 'science-cafeteria',
-    name: 'Science Block Cafeteria',
-    type: 'canteen',
-    currentOccupancy: 65,
-    maxCapacity: 80,
-    avgWaitTime: 8,
-    status: 'busy',
-    position: { x: 20, y: 70 },
-  },
-];
 
 const QueueContext = createContext<QueueContextType | undefined>(undefined);
 
@@ -113,6 +62,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [demoMode, setDemoMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [userLocation, setUserLocation] = useState<{ id: string; name: string } | null>(null);
 
   // Get user from auth context (may be null during initial load)
   let user: { uid: string } | null = null;
@@ -129,13 +79,29 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return 'crowded';
   };
 
-  // Seed locations to Firestore
+  // Seed locations to Firestore (Admin function)
   const seedLocations = useCallback(async () => {
+    const defaultLocations = [
+      { id: 'main-canteen', name: 'Main Canteen', type: 'canteen', maxCapacity: 100, position: { x: 30, y: 40 } },
+      { id: 'central-library', name: 'Central Library', type: 'library', maxCapacity: 150, position: { x: 60, y: 25 } },
+      { id: 'admin-office', name: 'Admin Office', type: 'office', maxCapacity: 100, position: { x: 45, y: 65 } },
+      { id: 'library-cafe', name: 'Library Cafe', type: 'cafe', maxCapacity: 50, position: { x: 75, y: 50 } },
+      { id: 'science-cafeteria', name: 'Science Block Cafeteria', type: 'canteen', maxCapacity: 80, position: { x: 20, y: 70 } },
+    ];
+
     console.log('Seeding locations to Firestore...');
-    for (const location of initialLocations) {
+    for (const location of defaultLocations) {
       const locationRef = doc(db, 'locations', location.id);
+      const entryQRCode = `smartqueue-entry-${location.id}-${Date.now()}`;
+      const exitQRCode = `smartqueue-exit-${location.id}-${Date.now()}`;
+
       await setDoc(locationRef, {
         ...location,
+        currentOccupancy: 0, // Start with 0 - real data comes from QR scans
+        avgWaitTime: 5,
+        entryQRCode,
+        exitQRCode,
+        createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
       });
       console.log(`Seeded: ${location.name}`);
@@ -143,32 +109,31 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     console.log('Done seeding locations!');
   }, []);
 
-  // Subscribe to Firestore locations - real-time updates
+  // Subscribe to Firestore locations - REAL-TIME updates only from Firebase
+  // NO MOCK DATA - Locations must be created by admin
   useEffect(() => {
     const locationsRef = collection(db, 'locations');
     const unsubscribe = onSnapshot(locationsRef, (snapshot) => {
-      if (snapshot.empty) {
-        // No locations yet - seed them automatically
-        seedLocations().then(() => {
-          console.log('Locations seeded automatically');
-        });
-      } else {
-        const locationData = snapshot.docs.map(doc => {
-          const data = doc.data();
-          const occupancyPercent = (data.currentOccupancy / data.maxCapacity) * 100;
-          return {
-            id: doc.id,
-            name: data.name,
-            type: data.type,
-            currentOccupancy: data.currentOccupancy,
-            maxCapacity: data.maxCapacity,
-            avgWaitTime: data.avgWaitTime,
-            status: getStatusFromOccupancy(occupancyPercent),
-            position: data.position,
-          } as Location;
-        });
-        setLocations(locationData);
-      }
+      // Only show locations that exist in Firestore - NO FALLBACK TO MOCK DATA
+      const locationData = snapshot.docs.map(doc => {
+        const data = doc.data();
+        const occupancyPercent = data.maxCapacity > 0
+          ? ((data.currentOccupancy || 0) / data.maxCapacity) * 100
+          : 0;
+        return {
+          id: doc.id,
+          name: data.name,
+          type: data.type,
+          currentOccupancy: data.currentOccupancy || 0,
+          maxCapacity: data.maxCapacity,
+          avgWaitTime: data.avgWaitTime || 5,
+          status: getStatusFromOccupancy(occupancyPercent),
+          position: data.position || { x: 50, y: 50 },
+          entryQRCode: data.entryQRCode,
+          exitQRCode: data.exitQRCode,
+        } as Location;
+      });
+      setLocations(locationData);
       setIsLoading(false);
     }, (error) => {
       console.error('Error fetching locations:', error);
@@ -176,7 +141,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     return () => unsubscribe();
-  }, [seedLocations]);
+  }, []);
 
   // Subscribe to user's tickets - real-time updates
   useEffect(() => {
@@ -214,60 +179,82 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => unsubscribe();
   }, [user?.uid]);
 
-  // Demo mode simulation - simulates real-time crowd changes
+  // Subscribe to user's current location (from QR check-ins)
+  useEffect(() => {
+    if (!user) {
+      setUserLocation(null);
+      return;
+    }
+
+    const userRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(userRef, (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        if (data.currentLocationId && data.currentLocationName) {
+          setUserLocation({
+            id: data.currentLocationId,
+            name: data.currentLocationName,
+          });
+        } else {
+          setUserLocation(null);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  // Demo mode simulation - ONLY when demoMode is ON
+  // This simulates QR scans to show how the app works
   useEffect(() => {
     if (!demoMode || locations.length === 0) return;
 
     const interval = setInterval(async () => {
-      // Update each location in Firestore with random crowd changes
+      // Simulate random crowd changes by updating Firestore
       for (const loc of locations) {
-        const change = Math.floor(Math.random() * 20) - 10;
-        const newOccupancy = Math.max(5, Math.min(loc.maxCapacity - 2, loc.currentOccupancy + change));
-        const newWaitTime = Math.max(1, Math.floor(loc.avgWaitTime + (Math.random() * 6 - 3)));
+        const change = Math.floor(Math.random() * 6) - 3; // -3 to +3
+        const newOccupancy = Math.max(0, Math.min(loc.maxCapacity, (loc.currentOccupancy || 0) + change));
 
-        const locationRef = doc(db, 'locations', loc.id);
-        await updateDoc(locationRef, {
-          currentOccupancy: newOccupancy,
-          avgWaitTime: newWaitTime,
-          updatedAt: Timestamp.now(),
-        });
+        try {
+          const locationRef = doc(db, 'locations', loc.id);
+          await updateDoc(locationRef, {
+            currentOccupancy: newOccupancy,
+            avgWaitTime: Math.max(1, Math.floor(5 + (newOccupancy / loc.maxCapacity) * 20)),
+            updatedAt: Timestamp.now(),
+          });
+        } catch (error) {
+          console.error('Error updating location in demo mode:', error);
+        }
       }
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [demoMode, locations]);
+  }, [demoMode, locations.length]);
 
   const joinQueue = useCallback(async (locationId: string): Promise<Ticket> => {
     const location = locations.find(l => l.id === locationId);
     if (!location) throw new Error('Location not found');
     if (!user) throw new Error('User not authenticated');
 
-    // Calculate position based on current queue
-    const ticketsRef = collection(db, 'tickets');
-    const locationTicketsQuery = query(
-      ticketsRef,
-      where('locationId', '==', locationId),
-      where('status', '==', 'active')
-    );
-
     // Create ticket in Firestore
     const ticketData = {
       userId: user.uid,
       locationId,
       locationName: location.name,
-      positionInLine: Math.floor(Math.random() * 5) + 1, // This would be calculated from actual queue
+      positionInLine: Math.max(1, Math.floor((location.currentOccupancy || 0) / 10) + 1),
       estimatedTime: location.avgWaitTime,
       createdAt: Timestamp.now(),
       status: 'active' as const,
     };
 
+    const ticketsRef = collection(db, 'tickets');
     const docRef = await addDoc(ticketsRef, ticketData);
 
     // Update user stats
     const userRef = doc(db, 'users', user.uid);
     await updateDoc(userRef, {
       totalQueuesJoined: increment(1),
-      totalTimeSaved: increment(Math.floor(location.avgWaitTime * 0.7)), // Estimate 70% time saved
+      totalTimeSaved: increment(Math.floor(location.avgWaitTime * 0.7)),
     });
 
     return {
@@ -278,7 +265,6 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [locations, user]);
 
   const cancelTicket = useCallback(async (ticketId: string) => {
-    // Delete ticket from Firestore
     const ticketRef = doc(db, 'tickets', ticketId);
     await deleteDoc(ticketRef);
   }, []);
@@ -287,14 +273,14 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (locations.length === 0) return null;
 
     const bestLocation = locations.reduce((best, loc) => {
-      const score = ((100 - (loc.currentOccupancy / loc.maxCapacity) * 100) + (30 - loc.avgWaitTime)) / 2;
-      const bestScore = ((100 - (best.currentOccupancy / best.maxCapacity) * 100) + (30 - best.avgWaitTime)) / 2;
+      const score = ((100 - ((loc.currentOccupancy || 0) / loc.maxCapacity) * 100) + (30 - loc.avgWaitTime)) / 2;
+      const bestScore = ((100 - ((best.currentOccupancy || 0) / best.maxCapacity) * 100) + (30 - best.avgWaitTime)) / 2;
       return score > bestScore ? loc : best;
     });
 
     const worstLocation = locations.reduce((worst, loc) => {
-      const score = (loc.currentOccupancy / loc.maxCapacity) * 100;
-      const worstScore = (worst.currentOccupancy / worst.maxCapacity) * 100;
+      const score = ((loc.currentOccupancy || 0) / loc.maxCapacity) * 100;
+      const worstScore = ((worst.currentOccupancy || 0) / worst.maxCapacity) * 100;
       return score > worstScore ? loc : worst;
     });
 
@@ -320,6 +306,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       getAISuggestion,
       isLoading,
       seedLocations,
+      userLocation,
     }}>
       {children}
     </QueueContext.Provider>

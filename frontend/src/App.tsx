@@ -8,6 +8,7 @@ import { QueueProvider } from "@/contexts/QueueContext";
 import { BottomNav } from "@/components/BottomNav";
 import { DemoModeToggle } from "@/components/DemoModeToggle";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { AdminRoute } from "@/components/AdminRoute";
 import Dashboard from "./pages/Dashboard";
 import MapView from "./pages/MapView";
 import MyTickets from "./pages/MyTickets";
@@ -18,19 +19,45 @@ import NotificationsPage from "./pages/NotificationsPage";
 import PrivacyPage from "./pages/PrivacyPage";
 import HelpSupportPage from "./pages/HelpSupportPage";
 import AppSettingsPage from "./pages/AppSettingsPage";
+import QRScannerPage from "./pages/QRScannerPage";
+import AdminLoginPage from "./pages/admin/AdminLoginPage";
+import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminLocations from "./pages/admin/AdminLocations";
+import AdminQRCodes from "./pages/admin/AdminQRCodes";
 
 const queryClient = new QueryClient();
 
 // Component to conditionally render bottom nav
 const AppLayout = () => {
   const location = useLocation();
-  const hideNavPaths = ['/login', '/notifications', '/privacy', '/help', '/settings'];
-  const showNav = !hideNavPaths.includes(location.pathname);
+  const hideNavPaths = ['/login', '/notifications', '/privacy', '/help', '/settings', '/scan', '/admin'];
+  const showNav = !hideNavPaths.some(path => location.pathname.startsWith(path));
 
   return (
     <div className="max-w-md mx-auto bg-background min-h-screen relative shadow-xl">
       <Routes>
+        {/* User Auth */}
         <Route path="/login" element={<LoginPage />} />
+
+        {/* Admin Routes */}
+        <Route path="/admin/login" element={<AdminLoginPage />} />
+        <Route path="/admin" element={
+          <AdminRoute>
+            <AdminDashboard />
+          </AdminRoute>
+        } />
+        <Route path="/admin/locations" element={
+          <AdminRoute>
+            <AdminLocations />
+          </AdminRoute>
+        } />
+        <Route path="/admin/qrcodes" element={
+          <AdminRoute>
+            <AdminQRCodes />
+          </AdminRoute>
+        } />
+
+        {/* User Routes */}
         <Route path="/" element={
           <ProtectedRoute>
             <Dashboard />
@@ -39,6 +66,11 @@ const AppLayout = () => {
         <Route path="/map" element={
           <ProtectedRoute>
             <MapView />
+          </ProtectedRoute>
+        } />
+        <Route path="/scan" element={
+          <ProtectedRoute>
+            <QRScannerPage />
           </ProtectedRoute>
         } />
         <Route path="/tickets" element={

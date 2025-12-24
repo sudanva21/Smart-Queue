@@ -1,16 +1,19 @@
 import { motion } from 'framer-motion';
-import { Clock, TrendingDown } from 'lucide-react';
+import { Clock, TrendingDown, MapPin, QrCode } from 'lucide-react';
 import { useQueue } from '@/contexts/QueueContext';
 import { CrowdCard } from '@/components/CrowdCard';
 import { AISuggestionBanner } from '@/components/AISuggestionBanner';
 import { JoinQueueDrawer } from '@/components/JoinQueueDrawer';
 import { useState } from 'react';
 import { Location } from '@/contexts/QueueContext';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 
 const Dashboard = () => {
-  const { locations, demoMode } = useQueue();
+  const { locations, demoMode, userLocation, isLoading } = useQueue();
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const navigate = useNavigate();
 
   const totalTimeSaved = locations.reduce((acc, loc) => {
     if (loc.status === 'safe') return acc + loc.avgWaitTime;
@@ -36,21 +39,51 @@ const Dashboard = () => {
               <h1 className="font-display text-xl font-bold text-foreground">SmartQueue</h1>
               <p className="text-sm text-muted-foreground">Campus Crowd Optimizer</p>
             </div>
-            {demoMode && (
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-full text-xs font-medium"
-              >
-                <span className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-                Live Data
-              </motion.div>
-            )}
+            <div className="flex items-center gap-2">
+              {demoMode && (
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary rounded-full text-xs font-medium"
+                >
+                  <span className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                  Demo
+                </motion.div>
+              )}
+            </div>
           </motion.div>
         </div>
       </header>
 
       <main className="px-4 py-6 space-y-6">
+        {/* User's Current Location */}
+        {userLocation && (
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-5 shadow-lg"
+          >
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-white/20 rounded-2xl">
+                <MapPin className="h-6 w-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-white/80">You're currently at</p>
+                <p className="font-display text-xl font-bold text-white">{userLocation.name}</p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => navigate('/scan')}
+                className="rounded-full bg-white/20 hover:bg-white/30 text-white border-0"
+              >
+                <QrCode className="h-4 w-4 mr-1" />
+                Exit
+              </Button>
+            </div>
+          </motion.section>
+        )}
+
         {/* Quick Status */}
         <motion.section
           initial={{ opacity: 0, y: 20 }}
@@ -64,7 +97,7 @@ const Dashboard = () => {
             </div>
             <div className="flex-1">
               <p className="text-sm text-muted-foreground">Today's potential savings</p>
-              <motion.p 
+              <motion.p
                 key={totalTimeSaved}
                 initial={{ scale: 1.1 }}
                 animate={{ scale: 1 }}
@@ -87,20 +120,37 @@ const Dashboard = () => {
             <h2 className="font-display text-lg font-semibold text-foreground">Live Crowds</h2>
             <div className="flex items-center gap-1 text-muted-foreground text-sm">
               <Clock className="h-4 w-4" />
-              <span>Updated just now</span>
+              <span>Real-time</span>
             </div>
           </div>
 
-          <div className="space-y-4">
-            {locations.slice(0, 3).map((location, index) => (
-              <CrowdCard
-                key={location.id}
-                location={location}
-                delay={index}
-                onClick={() => handleCardClick(location)}
-              />
-            ))}
-          </div>
+          {isLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-card rounded-2xl p-5 animate-pulse">
+                  <div className="h-6 bg-secondary rounded w-1/3 mb-2" />
+                  <div className="h-4 bg-secondary rounded w-2/3" />
+                </div>
+              ))}
+            </div>
+          ) : locations.length === 0 ? (
+            <div className="bg-card rounded-2xl p-8 text-center border border-border/50">
+              <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">No locations available yet.</p>
+              <p className="text-sm text-muted-foreground mt-1">Admin needs to add locations first.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {locations.map((location, index) => (
+                <CrowdCard
+                  key={location.id}
+                  location={location}
+                  delay={index}
+                  onClick={() => handleCardClick(location)}
+                />
+              ))}
+            </div>
+          )}
         </section>
       </main>
 
