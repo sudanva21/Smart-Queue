@@ -3,14 +3,15 @@ import {
   collection,
   onSnapshot,
   addDoc,
-  updateDoc,
   deleteDoc,
   doc,
   query,
   where,
   orderBy,
+  updateDoc,
   increment,
-  Timestamp
+  Timestamp,
+  setDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from './AuthContext';
@@ -48,11 +49,13 @@ interface QueueContextType {
   cancelTicket: (ticketId: string) => void;
   getAISuggestion: () => { message: string; location: Location } | null;
   isLoading: boolean;
+  seedLocations: () => Promise<void>;
 }
 
+// Initial location data for seeding
 const initialLocations: Location[] = [
   {
-    id: '1',
+    id: 'main-canteen',
     name: 'Main Canteen',
     type: 'canteen',
     currentOccupancy: 78,
@@ -62,7 +65,7 @@ const initialLocations: Location[] = [
     position: { x: 30, y: 40 },
   },
   {
-    id: '2',
+    id: 'central-library',
     name: 'Central Library',
     type: 'library',
     currentOccupancy: 45,
@@ -72,7 +75,7 @@ const initialLocations: Location[] = [
     position: { x: 60, y: 25 },
   },
   {
-    id: '3',
+    id: 'admin-office',
     name: 'Admin Office',
     type: 'office',
     currentOccupancy: 92,
@@ -82,7 +85,7 @@ const initialLocations: Location[] = [
     position: { x: 45, y: 65 },
   },
   {
-    id: '4',
+    id: 'library-cafe',
     name: 'Library Cafe',
     type: 'cafe',
     currentOccupancy: 15,
@@ -92,7 +95,7 @@ const initialLocations: Location[] = [
     position: { x: 75, y: 50 },
   },
   {
-    id: '5',
+    id: 'science-cafeteria',
     name: 'Science Block Cafeteria',
     type: 'canteen',
     currentOccupancy: 65,
@@ -106,11 +109,10 @@ const initialLocations: Location[] = [
 const QueueContext = createContext<QueueContextType | undefined>(undefined);
 
 export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [locations, setLocations] = useState<Location[]>(initialLocations);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [demoMode, setDemoMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [useFirebase, setUseFirebase] = useState(false);
 
   // Get user from auth context (may be null during initial load)
   let user: { uid: string } | null = null;
@@ -127,25 +129,29 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return 'crowded';
   };
 
-  // Check if Firebase is configured
-  useEffect(() => {
-    const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
-    if (apiKey && apiKey !== 'your_api_key_here') {
-      setUseFirebase(true);
-    } else {
-      setIsLoading(false);
+  // Seed locations to Firestore
+  const seedLocations = useCallback(async () => {
+    console.log('Seeding locations to Firestore...');
+    for (const location of initialLocations) {
+      const locationRef = doc(db, 'locations', location.id);
+      await setDoc(locationRef, {
+        ...location,
+        updatedAt: Timestamp.now(),
+      });
+      console.log(`Seeded: ${location.name}`);
     }
+    console.log('Done seeding locations!');
   }, []);
 
-  // Subscribe to Firestore locations
+  // Subscribe to Firestore locations - real-time updates
   useEffect(() => {
-    if (!useFirebase) return;
-
     const locationsRef = collection(db, 'locations');
     const unsubscribe = onSnapshot(locationsRef, (snapshot) => {
       if (snapshot.empty) {
-        // No locations in Firestore, use initial data
-        setLocations(initialLocations);
+        // No locations yet - seed them automatically
+        seedLocations().then(() => {
+          console.log('Locations seeded automatically');
+        });
       } else {
         const locationData = snapshot.docs.map(doc => {
           const data = doc.data();
@@ -170,11 +176,14 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     return () => unsubscribe();
-  }, [useFirebase]);
+  }, [seedLocations]);
 
-  // Subscribe to user's tickets
+  // Subscribe to user's tickets - real-time updates
   useEffect(() => {
-    if (!useFirebase || !user) return;
+    if (!user) {
+      setTickets([]);
+      return;
+    }
 
     const ticketsRef = collection(db, 'tickets');
     const q = query(
@@ -203,92 +212,76 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
 
     return () => unsubscribe();
-  }, [useFirebase, user]);
+  }, [user?.uid]);
 
-  // Demo mode simulation (only when not using Firebase or explicitly enabled)
+  // Demo mode simulation - simulates real-time crowd changes
   useEffect(() => {
-    if (!demoMode) return;
+    if (!demoMode || locations.length === 0) return;
 
-    const interval = setInterval(() => {
-      setLocations(prev =>
-        prev.map(loc => {
-          const change = Math.floor(Math.random() * 30) - 15;
-          const newOccupancy = Math.max(10, Math.min(98, loc.currentOccupancy + change));
-          const occupancyPercent = (newOccupancy / loc.maxCapacity) * 100;
-          const newWaitTime = Math.max(1, Math.floor(loc.avgWaitTime + (Math.random() * 10 - 5)));
+    const interval = setInterval(async () => {
+      // Update each location in Firestore with random crowd changes
+      for (const loc of locations) {
+        const change = Math.floor(Math.random() * 20) - 10;
+        const newOccupancy = Math.max(5, Math.min(loc.maxCapacity - 2, loc.currentOccupancy + change));
+        const newWaitTime = Math.max(1, Math.floor(loc.avgWaitTime + (Math.random() * 6 - 3)));
 
-          return {
-            ...loc,
-            currentOccupancy: newOccupancy,
-            avgWaitTime: newWaitTime,
-            status: getStatusFromOccupancy(occupancyPercent),
-          };
-        })
-      );
-    }, 3000);
+        const locationRef = doc(db, 'locations', loc.id);
+        await updateDoc(locationRef, {
+          currentOccupancy: newOccupancy,
+          avgWaitTime: newWaitTime,
+          updatedAt: Timestamp.now(),
+        });
+      }
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [demoMode]);
+  }, [demoMode, locations]);
 
   const joinQueue = useCallback(async (locationId: string): Promise<Ticket> => {
     const location = locations.find(l => l.id === locationId);
     if (!location) throw new Error('Location not found');
+    if (!user) throw new Error('User not authenticated');
 
-    if (useFirebase && user) {
-      // Create ticket in Firestore
-      const ticketData = {
-        userId: user.uid,
-        locationId,
-        locationName: location.name,
-        positionInLine: Math.floor(Math.random() * 10) + 1,
-        estimatedTime: location.avgWaitTime,
-        createdAt: Timestamp.now(),
-        status: 'active' as const,
-      };
+    // Calculate position based on current queue
+    const ticketsRef = collection(db, 'tickets');
+    const locationTicketsQuery = query(
+      ticketsRef,
+      where('locationId', '==', locationId),
+      where('status', '==', 'active')
+    );
 
-      const ticketsRef = collection(db, 'tickets');
-      const docRef = await addDoc(ticketsRef, ticketData);
+    // Create ticket in Firestore
+    const ticketData = {
+      userId: user.uid,
+      locationId,
+      locationName: location.name,
+      positionInLine: Math.floor(Math.random() * 5) + 1, // This would be calculated from actual queue
+      estimatedTime: location.avgWaitTime,
+      createdAt: Timestamp.now(),
+      status: 'active' as const,
+    };
 
-      // Update user stats
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        totalQueuesJoined: increment(1),
-      });
+    const docRef = await addDoc(ticketsRef, ticketData);
 
-      return {
-        id: docRef.id,
-        ...ticketData,
-        createdAt: new Date(),
-      };
-    } else {
-      // Local mode - simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
+    // Update user stats
+    const userRef = doc(db, 'users', user.uid);
+    await updateDoc(userRef, {
+      totalQueuesJoined: increment(1),
+      totalTimeSaved: increment(Math.floor(location.avgWaitTime * 0.7)), // Estimate 70% time saved
+    });
 
-      const newTicket: Ticket = {
-        id: `TKT-${Date.now()}`,
-        locationId,
-        locationName: location.name,
-        positionInLine: Math.floor(Math.random() * 10) + 1,
-        estimatedTime: location.avgWaitTime,
-        createdAt: new Date(),
-        status: 'active',
-      };
-
-      setTickets(prev => [...prev, newTicket]);
-      return newTicket;
-    }
-  }, [locations, useFirebase, user]);
+    return {
+      id: docRef.id,
+      ...ticketData,
+      createdAt: new Date(),
+    };
+  }, [locations, user]);
 
   const cancelTicket = useCallback(async (ticketId: string) => {
-    if (useFirebase) {
-      // Delete ticket from Firestore
-      const ticketRef = doc(db, 'tickets', ticketId);
-      await deleteDoc(ticketRef);
-    } else {
-      // Local mode
-      setTickets(prev => prev.filter(t => t.id !== ticketId));
-    }
-  }, [useFirebase]);
+    // Delete ticket from Firestore
+    const ticketRef = doc(db, 'tickets', ticketId);
+    await deleteDoc(ticketRef);
+  }, []);
 
   const getAISuggestion = useCallback(() => {
     if (locations.length === 0) return null;
@@ -326,6 +319,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       cancelTicket,
       getAISuggestion,
       isLoading,
+      seedLocations,
     }}>
       {children}
     </QueueContext.Provider>

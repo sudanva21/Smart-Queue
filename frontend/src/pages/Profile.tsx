@@ -1,12 +1,11 @@
 import { motion } from 'framer-motion';
 import { User, Settings, Bell, Shield, HelpCircle, LogOut, ChevronRight, Clock, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { useQueue } from '@/contexts/QueueContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 const Profile = () => {
@@ -16,26 +15,22 @@ const Profile = () => {
   const [userStats, setUserStats] = useState({ totalTimeSaved: 0, totalQueuesJoined: 0 });
   const [isSigningOut, setIsSigningOut] = useState(false);
 
-  // Fetch user stats from Firestore
+  // Real-time user stats from Firestore
   useEffect(() => {
-    const fetchUserStats = async () => {
-      if (user) {
-        try {
-          const userRef = doc(db, 'users', user.uid);
-          const userSnap = await getDoc(userRef);
-          if (userSnap.exists()) {
-            const data = userSnap.data();
-            setUserStats({
-              totalTimeSaved: data.totalTimeSaved || 0,
-              totalQueuesJoined: data.totalQueuesJoined || 0,
-            });
-          }
-        } catch (error) {
-          console.error('Error fetching user stats:', error);
-        }
+    if (!user) return;
+
+    const userRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(userRef, (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setUserStats({
+          totalTimeSaved: data.totalTimeSaved || 0,
+          totalQueuesJoined: data.totalQueuesJoined || 0,
+        });
       }
-    };
-    fetchUserStats();
+    });
+
+    return () => unsubscribe();
   }, [user]);
 
   const handleSignOut = async () => {
@@ -50,13 +45,10 @@ const Profile = () => {
     }
   };
 
-  const totalTimesSaved = userStats.totalTimeSaved || tickets.length * 12;
-  const totalQueues = userStats.totalQueuesJoined || tickets.length;
-
   const menuItems = [
-    { icon: Bell, label: 'Notifications', hasToggle: true },
-    { icon: Shield, label: 'Privacy Settings' },
-    { icon: HelpCircle, label: 'Help & Support' },
+    { icon: Bell, label: 'Notifications', path: '/notifications' },
+    { icon: Shield, label: 'Privacy Settings', path: '/privacy' },
+    { icon: HelpCircle, label: 'Help & Support', path: '/help' },
   ];
 
   return (
@@ -89,7 +81,7 @@ const Profile = () => {
       </header>
 
       <main className="px-4 -mt-8">
-        {/* Stats Cards */}
+        {/* Stats Cards - Real-time */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -100,14 +92,28 @@ const Profile = () => {
               <Clock className="h-4 w-4" />
               <span className="text-xs">Time Saved</span>
             </div>
-            <p className="font-display text-2xl font-bold text-foreground">{totalTimesSaved} mins</p>
+            <motion.p
+              key={userStats.totalTimeSaved}
+              initial={{ scale: 1.1 }}
+              animate={{ scale: 1 }}
+              className="font-display text-2xl font-bold text-foreground"
+            >
+              {userStats.totalTimeSaved} mins
+            </motion.p>
           </div>
           <div className="bg-card rounded-2xl p-4 shadow-card border border-border/50">
             <div className="flex items-center gap-2 text-muted-foreground mb-2">
               <TrendingUp className="h-4 w-4" />
               <span className="text-xs">Queues Joined</span>
             </div>
-            <p className="font-display text-2xl font-bold text-foreground">{totalQueues}</p>
+            <motion.p
+              key={userStats.totalQueuesJoined}
+              initial={{ scale: 1.1 }}
+              animate={{ scale: 1 }}
+              className="font-display text-2xl font-bold text-foreground"
+            >
+              {userStats.totalQueuesJoined}
+            </motion.p>
           </div>
         </motion.div>
 
@@ -118,9 +124,10 @@ const Profile = () => {
           transition={{ delay: 0.1 }}
           className="bg-card rounded-2xl shadow-card border border-border/50 overflow-hidden"
         >
-          {menuItems.map((item, index) => (
+          {menuItems.map((item) => (
             <button
               key={item.label}
+              onClick={() => navigate(item.path)}
               className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors"
             >
               <div className="flex items-center gap-3">
@@ -129,11 +136,7 @@ const Profile = () => {
                 </div>
                 <span className="font-medium text-foreground">{item.label}</span>
               </div>
-              {item.hasToggle ? (
-                <Switch defaultChecked />
-              ) : (
-                <ChevronRight className="h-5 w-5 text-muted-foreground" />
-              )}
+              <ChevronRight className="h-5 w-5 text-muted-foreground" />
             </button>
           ))}
         </motion.div>
@@ -147,6 +150,7 @@ const Profile = () => {
         >
           <Button
             variant="secondary"
+            onClick={() => navigate('/settings')}
             className="w-full h-12 rounded-2xl font-medium justify-start px-4"
           >
             <Settings className="h-5 w-5 mr-3" />
