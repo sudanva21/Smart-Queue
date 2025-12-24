@@ -1,115 +1,96 @@
 import { motion } from 'framer-motion';
-import { Clock, Users, MapPin } from 'lucide-react';
+import { Location, LocationStatus } from '@/contexts/QueueContext';
+import { Users, Clock, ChevronRight, CheckCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Location } from '@/contexts/QueueContext';
-import { Badge } from '@/components/ui/badge';
 
 interface CrowdCardProps {
   location: Location;
-  onClick?: () => void;
-  delay?: number;
+  delay: number;
+  onClick: () => void;
+  isCurrentLocation?: boolean;
 }
 
-const statusConfig = {
-  safe: {
-    label: 'Safe',
-    bgClass: 'bg-status-safe-bg',
-    textClass: 'text-status-safe',
-    barClass: 'bg-status-safe',
-  },
-  busy: {
-    label: 'Busy',
-    bgClass: 'bg-status-busy-bg',
-    textClass: 'text-status-busy',
-    barClass: 'bg-status-busy',
-  },
-  crowded: {
-    label: 'Crowded',
-    bgClass: 'bg-status-crowded-bg',
-    textClass: 'text-status-crowded',
-    barClass: 'bg-status-crowded',
-  },
+const statusConfig: Record<LocationStatus, { color: string; bg: string; label: string }> = {
+  safe: { color: 'text-status-safe', bg: 'bg-status-safe/10', label: 'Not Crowded' },
+  busy: { color: 'text-status-busy', bg: 'bg-status-busy/10', label: 'Moderate' },
+  crowded: { color: 'text-status-crowded', bg: 'bg-status-crowded/10', label: 'Very Crowded' },
 };
 
-const typeIcons = {
+const typeIcons: Record<string, string> = {
   canteen: '🍽️',
   library: '📚',
   office: '🏢',
   cafe: '☕',
 };
 
-export const CrowdCard = ({ location, onClick, delay = 0 }: CrowdCardProps) => {
-  const occupancyPercent = Math.round((location.currentOccupancy / location.maxCapacity) * 100);
+export const CrowdCard = ({ location, delay, onClick, isCurrentLocation }: CrowdCardProps) => {
   const config = statusConfig[location.status];
+  const occupancyPercent = Math.round((location.currentOccupancy / location.maxCapacity) * 100);
 
   return (
-    <motion.div
+    <motion.button
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: delay * 0.1 }}
-      whileHover={{ scale: 1.02 }}
+      transition={{ delay: delay * 0.1 }}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      className="bg-card rounded-2xl p-4 shadow-card hover:shadow-card-hover transition-all duration-300 cursor-pointer border border-border/50"
+      className={cn(
+        "w-full bg-card rounded-2xl p-5 shadow-card border transition-colors text-left",
+        isCurrentLocation
+          ? "border-green-500/50 bg-green-50/50 dark:bg-green-900/10"
+          : "border-border/50 hover:border-primary/30"
+      )}
     >
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">{typeIcons[location.type]}</span>
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-3">
+          <span className="text-2xl">{typeIcons[location.type] || '📍'}</span>
           <div>
-            <h3 className="font-display font-medium text-foreground">{location.name}</h3>
-            <div className="flex items-center gap-1 text-muted-foreground text-sm">
-              <MapPin className="h-3 w-3" />
-              <span>Campus Zone {location.id}</span>
+            <div className="flex items-center gap-2">
+              <h3 className="font-display font-semibold text-foreground">{location.name}</h3>
+              {isCurrentLocation && (
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-green-500 text-white text-xs rounded-full">
+                  <CheckCircle className="h-3 w-3" />
+                  You're here
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 mt-1">
+              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                <Users className="h-4 w-4" />
+                <span>{location.currentOccupancy}/{location.maxCapacity}</span>
+              </div>
+              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                <span>{location.avgWaitTime} min wait</span>
+              </div>
             </div>
           </div>
         </div>
-        <Badge 
-          className={cn(
-            "text-xs font-medium px-2.5 py-1 rounded-full border-0",
-            config.bgClass,
-            config.textClass
-          )}
-        >
-          {config.label}
-        </Badge>
+        {!isCurrentLocation && (
+          <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-1" />
+        )}
       </div>
 
-      {/* Occupancy Bar */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-sm text-muted-foreground flex items-center gap-1">
-            <Users className="h-3.5 w-3.5" />
-            Occupancy
-          </span>
-          <span className={cn("text-sm font-semibold", config.textClass)}>
-            {occupancyPercent}%
-          </span>
+      {/* Progress bar */}
+      <div className="mt-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className={cn("text-xs font-medium", config.color)}>{config.label}</span>
+          <span className="text-xs text-muted-foreground">{occupancyPercent}% full</span>
         </div>
-        <div className="h-2.5 bg-secondary rounded-full overflow-hidden">
+        <div className="h-2 bg-secondary rounded-full overflow-hidden">
           <motion.div
-            className={cn("h-full rounded-full", config.barClass)}
             initial={{ width: 0 }}
             animate={{ width: `${occupancyPercent}%` }}
-            transition={{ duration: 0.8, ease: "easeOut", delay: delay * 0.1 + 0.2 }}
+            transition={{ delay: delay * 0.1 + 0.2, duration: 0.5 }}
+            className={cn(
+              "h-full rounded-full",
+              location.status === 'safe' && 'bg-status-safe',
+              location.status === 'busy' && 'bg-status-busy',
+              location.status === 'crowded' && 'bg-status-crowded'
+            )}
           />
         </div>
       </div>
-
-      {/* Wait Time */}
-      <div className="flex items-center justify-between pt-3 border-t border-border/50">
-        <span className="text-sm text-muted-foreground">Est. wait time</span>
-        <div className="flex items-center gap-1.5">
-          <Clock className="h-4 w-4 text-primary" />
-          <motion.span 
-            key={location.avgWaitTime}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="font-display font-semibold text-foreground"
-          >
-            {location.avgWaitTime} mins
-          </motion.span>
-        </div>
-      </div>
-    </motion.div>
+    </motion.button>
   );
 };

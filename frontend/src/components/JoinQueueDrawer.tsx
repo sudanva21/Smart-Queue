@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Clock, MapPin, Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Users, Clock, Loader2, AlertCircle } from 'lucide-react';
 import { Location, useQueue } from '@/contexts/QueueContext';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/drawer';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 interface JoinQueueDrawerProps {
   location: Location | null;
@@ -39,7 +40,7 @@ const statusConfig = {
   },
 };
 
-const typeIcons = {
+const typeIcons: Record<string, string> = {
   canteen: '🍽️',
   library: '📚',
   office: '🏢',
@@ -48,22 +49,35 @@ const typeIcons = {
 
 export const JoinQueueDrawer = ({ location, open, onOpenChange }: JoinQueueDrawerProps) => {
   const [isJoining, setIsJoining] = useState(false);
-  const { joinQueue } = useQueue();
+  const { joinQueue, isUserAtLocation, userLocation } = useQueue();
   const navigate = useNavigate();
 
   if (!location) return null;
 
   const config = statusConfig[location.status];
   const occupancyPercent = Math.round((location.currentOccupancy / location.maxCapacity) * 100);
+  const isAtThisLocation = isUserAtLocation(location.id);
+  const isAtAnyLocation = !!userLocation;
 
   const handleJoinQueue = async () => {
+    if (isAtThisLocation) {
+      toast.error('You are already at this location');
+      return;
+    }
+    if (isAtAnyLocation) {
+      toast.error(`Exit ${userLocation?.name} first before joining another queue`);
+      return;
+    }
+
     setIsJoining(true);
     try {
       await joinQueue(location.id);
+      toast.success('Joined queue successfully!');
       onOpenChange(false);
       navigate('/tickets');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to join queue:', error);
+      toast.error(error.message || 'Failed to join queue');
     } finally {
       setIsJoining(false);
     }
@@ -74,89 +88,113 @@ export const JoinQueueDrawer = ({ location, open, onOpenChange }: JoinQueueDrawe
       <DrawerContent className="max-h-[85vh]">
         <DrawerHeader className="text-left">
           <div className="flex items-center gap-3 mb-2">
-            <span className="text-3xl">{typeIcons[location.type]}</span>
+            <span className="text-3xl">{typeIcons[location.type] || '📍'}</span>
             <div>
               <DrawerTitle className="font-display text-xl">{location.name}</DrawerTitle>
               <DrawerDescription className="flex items-center gap-1">
-                <MapPin className="h-3 w-3" />
-                Campus Zone {location.id}
+                <span className={cn("w-2 h-2 rounded-full",
+                  location.status === 'safe' && 'bg-status-safe',
+                  location.status === 'busy' && 'bg-status-busy',
+                  location.status === 'crowded' && 'bg-status-crowded'
+                )} />
+                {config.label}
               </DrawerDescription>
             </div>
           </div>
         </DrawerHeader>
 
-        <div className="px-4 pb-4">
-          {/* Status Badge */}
-          <div className={cn(
-            "inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium mb-4",
-            config.bgClass,
-            config.textClass
-          )}>
-            {config.label} • {occupancyPercent}% Full
-          </div>
-
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-secondary/50 rounded-2xl p-4">
-              <div className="flex items-center gap-2 text-muted-foreground mb-2">
-                <Users className="h-4 w-4" />
-                <span className="text-sm">Current</span>
+        <div className="px-4 space-y-4">
+          {/* Warning if at another location */}
+          {isAtAnyLocation && !isAtThisLocation && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3"
+            >
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-600" />
+                <p className="text-sm text-amber-800 dark:text-amber-200">
+                  Exit {userLocation?.name} first
+                </p>
               </div>
-              <p className="font-display text-2xl font-bold text-foreground">
-                {location.currentOccupancy}
-                <span className="text-muted-foreground text-base font-normal">/{location.maxCapacity}</span>
+            </motion.div>
+          )}
+
+          {/* Stats */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-secondary rounded-2xl p-4">
+              <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                <Users className="h-4 w-4" />
+                <span className="text-sm">Current Crowd</span>
+              </div>
+              <p className="font-display text-xl font-bold text-foreground">
+                {location.currentOccupancy}/{location.maxCapacity}
               </p>
+              <p className="text-xs text-muted-foreground">{occupancyPercent}% capacity</p>
             </div>
-            <div className="bg-secondary/50 rounded-2xl p-4">
-              <div className="flex items-center gap-2 text-muted-foreground mb-2">
+            <div className="bg-secondary rounded-2xl p-4">
+              <div className="flex items-center gap-2 text-muted-foreground mb-1">
                 <Clock className="h-4 w-4" />
                 <span className="text-sm">Wait Time</span>
               </div>
-              <p className="font-display text-2xl font-bold text-foreground">
-                {location.avgWaitTime}
-                <span className="text-muted-foreground text-base font-normal"> mins</span>
+              <p className="font-display text-xl font-bold text-foreground">
+                {location.avgWaitTime} min
               </p>
+              <p className="text-xs text-muted-foreground">estimated</p>
             </div>
           </div>
 
-          {/* Info Text */}
-          <p className="text-sm text-muted-foreground mt-4 text-center">
-            Join the virtual queue and get notified when it's your turn. No need to wait in line!
-          </p>
+          {/* Capacity Bar */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">Capacity</span>
+              <span className={cn("text-sm font-medium", config.textClass)}>{config.label}</span>
+            </div>
+            <div className="h-3 bg-secondary rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${occupancyPercent}%` }}
+                transition={{ duration: 0.5 }}
+                className={cn(
+                  "h-full rounded-full",
+                  location.status === 'safe' && 'bg-status-safe',
+                  location.status === 'busy' && 'bg-status-busy',
+                  location.status === 'crowded' && 'bg-status-crowded'
+                )}
+              />
+            </div>
+          </div>
+
+          {/* Info */}
+          <div className="bg-accent/50 rounded-xl p-4">
+            <p className="text-sm text-muted-foreground">
+              <strong>Virtual Queue:</strong> Join the queue now and get notified when it's your turn.
+              No need to wait in line!
+            </p>
+          </div>
         </div>
 
-        <DrawerFooter className="pt-2">
+        <DrawerFooter>
           <Button
             onClick={handleJoinQueue}
-            disabled={isJoining}
-            className="w-full h-12 text-base font-medium rounded-2xl gradient-hero"
+            disabled={isJoining || isAtThisLocation || isAtAnyLocation}
+            className="w-full h-14 text-base font-medium rounded-2xl"
           >
-            <AnimatePresence mode="wait">
-              {isJoining ? (
-                <motion.div
-                  key="loading"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="flex items-center gap-2"
-                >
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Joining Queue...
-                </motion.div>
-              ) : (
-                <motion.span
-                  key="join"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                >
-                  Join Virtual Queue
-                </motion.span>
-              )}
-            </AnimatePresence>
+            {isJoining ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                Joining...
+              </>
+            ) : isAtThisLocation ? (
+              "You're already here"
+            ) : isAtAnyLocation ? (
+              "Exit current location first"
+            ) : (
+              "Join Virtual Queue"
+            )}
           </Button>
           <DrawerClose asChild>
-            <Button variant="outline" className="w-full h-12 rounded-2xl">
+            <Button variant="ghost" className="w-full rounded-2xl">
               Cancel
             </Button>
           </DrawerClose>

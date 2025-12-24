@@ -11,7 +11,8 @@ import {
   updateDoc,
   increment,
   Timestamp,
-  setDoc
+  setDoc,
+  getDocs
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from './AuthContext';
@@ -28,7 +29,6 @@ export interface Location {
   status: LocationStatus;
   position: { x: number; y: number };
   entryQRCode?: string;
-  exitQRCode?: string;
 }
 
 export interface Ticket {
@@ -53,6 +53,8 @@ interface QueueContextType {
   isLoading: boolean;
   seedLocations: () => Promise<void>;
   userLocation: { id: string; name: string } | null;
+  exitLocation: () => Promise<void>;
+  isUserAtLocation: (locationId: string) => boolean;
 }
 
 const QueueContext = createContext<QueueContextType | undefined>(undefined);
@@ -93,14 +95,12 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     for (const location of defaultLocations) {
       const locationRef = doc(db, 'locations', location.id);
       const entryQRCode = `smartqueue-entry-${location.id}-${Date.now()}`;
-      const exitQRCode = `smartqueue-exit-${location.id}-${Date.now()}`;
 
       await setDoc(locationRef, {
         ...location,
-        currentOccupancy: 0, // Start with 0 - real data comes from QR scans
+        currentOccupancy: 0,
         avgWaitTime: 5,
         entryQRCode,
-        exitQRCode,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
       });
@@ -109,12 +109,10 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     console.log('Done seeding locations!');
   }, []);
 
-  // Subscribe to Firestore locations - REAL-TIME updates only from Firebase
-  // NO MOCK DATA - Locations must be created by admin
+  // Subscribe to Firestore locations - REAL-TIME updates
   useEffect(() => {
     const locationsRef = collection(db, 'locations');
     const unsubscribe = onSnapshot(locationsRef, (snapshot) => {
-      // Only show locations that exist in Firestore - NO FALLBACK TO MOCK DATA
       const locationData = snapshot.docs.map(doc => {
         const data = doc.data();
         const occupancyPercent = data.maxCapacity > 0
@@ -130,7 +128,6 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           status: getStatusFromOccupancy(occupancyPercent),
           position: data.position || { x: 50, y: 50 },
           entryQRCode: data.entryQRCode,
-          exitQRCode: data.exitQRCode,
         } as Location;
       });
       setLocations(locationData);
@@ -204,15 +201,69 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => unsubscribe();
   }, [user?.uid]);
 
-  // Demo mode simulation - ONLY when demoMode is ON
-  // This simulates QR scans to show how the app works
+  // Check if user is at a specific location
+  const isUserAtLocation = useCallback((locationId: string): boolean => {
+    return userLocation?.id === locationId;
+  }, [userLocation]);
+
+  // Exit from current location (no QR needed!)
+  const exitLocation = useCallback(async () => {
+    if (!user || !userLocation) return;
+
+    try {
+      // Find active check-in for current location
+      const checkinsRef = collection(db, 'checkins');
+      const activeQuery = query(
+        checkinsRef,
+        where('userId', '==', user.uid),
+        where('locationId', '==', userLocation.id),
+        where('status', '==', 'active')
+      );
+      const activeCheckins = await getDocs(activeQuery);
+
+      if (!activeCheckins.empty) {
+        const checkinDoc = activeCheckins.docs[0];
+        const entryTime = checkinDoc.data().entryTime?.toDate() || new Date();
+        const timeSpent = Math.floor((Date.now() - entryTime.getTime()) / 60000);
+
+        // Update check-in to completed
+        await updateDoc(doc(db, 'checkins', checkinDoc.id), {
+          exitTime: Timestamp.now(),
+          status: 'completed',
+        });
+
+        // Decrement location occupancy
+        const locationRef = doc(db, 'locations', userLocation.id);
+        await updateDoc(locationRef, {
+          currentOccupancy: increment(-1),
+        });
+
+        // Update user - clear location and add time saved
+        await updateDoc(doc(db, 'users', user.uid), {
+          currentLocationId: null,
+          currentLocationName: null,
+          totalTimeSaved: increment(Math.max(1, Math.floor(timeSpent * 0.3))),
+        });
+      } else {
+        // No active check-in found, just clear user location
+        await updateDoc(doc(db, 'users', user.uid), {
+          currentLocationId: null,
+          currentLocationName: null,
+        });
+      }
+    } catch (error) {
+      console.error('Error exiting location:', error);
+      throw error;
+    }
+  }, [user, userLocation]);
+
+  // Demo mode simulation
   useEffect(() => {
     if (!demoMode || locations.length === 0) return;
 
     const interval = setInterval(async () => {
-      // Simulate random crowd changes by updating Firestore
       for (const loc of locations) {
-        const change = Math.floor(Math.random() * 6) - 3; // -3 to +3
+        const change = Math.floor(Math.random() * 6) - 3;
         const newOccupancy = Math.max(0, Math.min(loc.maxCapacity, (loc.currentOccupancy || 0) + change));
 
         try {
@@ -236,7 +287,11 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!location) throw new Error('Location not found');
     if (!user) throw new Error('User not authenticated');
 
-    // Create ticket in Firestore
+    // Don't allow joining queue if already at this location
+    if (userLocation?.id === locationId) {
+      throw new Error('You are already at this location');
+    }
+
     const ticketData = {
       userId: user.uid,
       locationId,
@@ -250,7 +305,6 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const ticketsRef = collection(db, 'tickets');
     const docRef = await addDoc(ticketsRef, ticketData);
 
-    // Update user stats
     const userRef = doc(db, 'users', user.uid);
     await updateDoc(userRef, {
       totalQueuesJoined: increment(1),
@@ -262,7 +316,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...ticketData,
       createdAt: new Date(),
     };
-  }, [locations, user]);
+  }, [locations, user, userLocation]);
 
   const cancelTicket = useCallback(async (ticketId: string) => {
     const ticketRef = doc(db, 'tickets', ticketId);
@@ -272,13 +326,20 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const getAISuggestion = useCallback(() => {
     if (locations.length === 0) return null;
 
-    const bestLocation = locations.reduce((best, loc) => {
+    // Filter out current location from suggestions
+    const availableLocations = userLocation
+      ? locations.filter(l => l.id !== userLocation.id)
+      : locations;
+
+    if (availableLocations.length === 0) return null;
+
+    const bestLocation = availableLocations.reduce((best, loc) => {
       const score = ((100 - ((loc.currentOccupancy || 0) / loc.maxCapacity) * 100) + (30 - loc.avgWaitTime)) / 2;
       const bestScore = ((100 - ((best.currentOccupancy || 0) / best.maxCapacity) * 100) + (30 - best.avgWaitTime)) / 2;
       return score > bestScore ? loc : best;
     });
 
-    const worstLocation = locations.reduce((worst, loc) => {
+    const worstLocation = availableLocations.reduce((worst, loc) => {
       const score = ((loc.currentOccupancy || 0) / loc.maxCapacity) * 100;
       const worstScore = ((worst.currentOccupancy || 0) / worst.maxCapacity) * 100;
       return score > worstScore ? loc : worst;
@@ -293,7 +354,7 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     }
     return null;
-  }, [locations]);
+  }, [locations, userLocation]);
 
   return (
     <QueueContext.Provider value={{
@@ -307,6 +368,8 @@ export const QueueProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       isLoading,
       seedLocations,
       userLocation,
+      exitLocation,
+      isUserAtLocation,
     }}>
       {children}
     </QueueContext.Provider>

@@ -1,19 +1,19 @@
 import { motion } from 'framer-motion';
-import { Clock, TrendingDown, MapPin, QrCode } from 'lucide-react';
+import { Clock, TrendingDown, MapPin, LogOut, Loader2 } from 'lucide-react';
 import { useQueue } from '@/contexts/QueueContext';
 import { CrowdCard } from '@/components/CrowdCard';
 import { AISuggestionBanner } from '@/components/AISuggestionBanner';
 import { JoinQueueDrawer } from '@/components/JoinQueueDrawer';
 import { useState } from 'react';
 import { Location } from '@/contexts/QueueContext';
-import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 const Dashboard = () => {
-  const { locations, demoMode, userLocation, isLoading } = useQueue();
+  const { locations, demoMode, userLocation, isLoading, exitLocation, isUserAtLocation } = useQueue();
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const navigate = useNavigate();
+  const [isExiting, setIsExiting] = useState(false);
 
   const totalTimeSaved = locations.reduce((acc, loc) => {
     if (loc.status === 'safe') return acc + loc.avgWaitTime;
@@ -21,8 +21,26 @@ const Dashboard = () => {
   }, 0);
 
   const handleCardClick = (location: Location) => {
+    // Don't open drawer if user is already at this location
+    if (isUserAtLocation(location.id)) {
+      toast.info('You are already at this location');
+      return;
+    }
     setSelectedLocation(location);
     setDrawerOpen(true);
+  };
+
+  const handleExit = async () => {
+    setIsExiting(true);
+    try {
+      await exitLocation();
+      toast.success('Successfully checked out!');
+    } catch (error) {
+      console.error('Error exiting:', error);
+      toast.error('Failed to check out');
+    } finally {
+      setIsExiting(false);
+    }
   };
 
   return (
@@ -56,7 +74,7 @@ const Dashboard = () => {
       </header>
 
       <main className="px-4 py-6 space-y-6">
-        {/* User's Current Location */}
+        {/* User's Current Location - with Exit Button */}
         {userLocation && (
           <motion.section
             initial={{ opacity: 0, y: 20 }}
@@ -72,13 +90,18 @@ const Dashboard = () => {
                 <p className="font-display text-xl font-bold text-white">{userLocation.name}</p>
               </div>
               <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => navigate('/scan')}
-                className="rounded-full bg-white/20 hover:bg-white/30 text-white border-0"
+                onClick={handleExit}
+                disabled={isExiting}
+                className="rounded-full bg-white/20 hover:bg-white/30 text-white border-0 px-6"
               >
-                <QrCode className="h-4 w-4 mr-1" />
-                Exit
+                {isExiting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Exit
+                  </>
+                )}
               </Button>
             </div>
           </motion.section>
@@ -147,6 +170,7 @@ const Dashboard = () => {
                   location={location}
                   delay={index}
                   onClick={() => handleCardClick(location)}
+                  isCurrentLocation={isUserAtLocation(location.id)}
                 />
               ))}
             </div>

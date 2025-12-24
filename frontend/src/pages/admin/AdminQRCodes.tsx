@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Download, Printer, QrCode } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import QRCode from 'qrcode';
@@ -12,7 +12,6 @@ interface Location {
     name: string;
     type: string;
     entryQRCode: string;
-    exitQRCode: string;
 }
 
 const AdminQRCodes = () => {
@@ -20,8 +19,7 @@ const AdminQRCodes = () => {
     const [searchParams] = useSearchParams();
     const [locations, setLocations] = useState<Location[]>([]);
     const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
-    const [qrImages, setQrImages] = useState<Record<string, { entry: string; exit: string }>>({});
-    const printRef = useRef<HTMLDivElement>(null);
+    const [qrImages, setQrImages] = useState<Record<string, string>>({});
 
     useEffect(() => {
         const locationParam = searchParams.get('location');
@@ -39,17 +37,15 @@ const AdminQRCodes = () => {
             })) as Location[];
             setLocations(locationData);
 
-            // Generate QR codes for each location
-            const qrData: Record<string, { entry: string; exit: string }> = {};
+            // Generate QR codes for each location (entry only)
+            const qrData: Record<string, string> = {};
             for (const loc of locationData) {
-                if (loc.entryQRCode && loc.exitQRCode) {
+                if (loc.entryQRCode) {
                     const entryUrl = `smartqueue://scan/${loc.id}/entry/${loc.entryQRCode}`;
-                    const exitUrl = `smartqueue://scan/${loc.id}/exit/${loc.exitQRCode}`;
 
                     try {
-                        const entryQR = await QRCode.toDataURL(entryUrl, { width: 200, margin: 2 });
-                        const exitQR = await QRCode.toDataURL(exitUrl, { width: 200, margin: 2 });
-                        qrData[loc.id] = { entry: entryQR, exit: exitQR };
+                        const entryQR = await QRCode.toDataURL(entryUrl, { width: 250, margin: 2 });
+                        qrData[loc.id] = entryQR;
                     } catch (error) {
                         console.error('Error generating QR code:', error);
                     }
@@ -61,13 +57,13 @@ const AdminQRCodes = () => {
         return () => unsubscribe();
     }, []);
 
-    const handleDownload = (locationId: string, type: 'entry' | 'exit') => {
+    const handleDownload = (locationId: string) => {
         const location = locations.find(l => l.id === locationId);
-        const qr = qrImages[locationId]?.[type];
+        const qr = qrImages[locationId];
         if (!qr || !location) return;
 
         const link = document.createElement('a');
-        link.download = `${location.name.replace(/\s+/g, '_')}_${type}_QR.png`;
+        link.download = `${location.name.replace(/\s+/g, '_')}_Entry_QR.png`;
         link.href = qr;
         link.click();
     };
@@ -82,35 +78,28 @@ const AdminQRCodes = () => {
             printWindow.document.write(`
         <html>
           <head>
-            <title>QR Codes - ${location.name}</title>
+            <title>Entry QR - ${location.name}</title>
             <style>
-              body { font-family: system-ui, sans-serif; padding: 40px; }
-              .container { display: flex; gap: 60px; justify-content: center; }
-              .qr-box { text-align: center; padding: 20px; border: 2px solid #e5e7eb; border-radius: 16px; }
-              .qr-box img { width: 200px; height: 200px; }
-              h1 { text-align: center; margin-bottom: 40px; }
-              h2 { margin: 0 0 10px; font-size: 18px; }
-              p { color: #6b7280; margin: 0; font-size: 14px; }
-              .type { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 10px; }
-              .entry { background: #d1fae5; color: #059669; }
-              .exit { background: #fee2e2; color: #dc2626; }
+              body { font-family: system-ui, sans-serif; padding: 40px; text-align: center; }
+              .qr-box { display: inline-block; padding: 30px; border: 3px solid #22c55e; border-radius: 24px; }
+              .qr-box img { width: 250px; height: 250px; }
+              h1 { margin-bottom: 10px; color: #1f2937; }
+              h2 { margin: 20px 0 5px; font-size: 24px; color: #22c55e; }
+              p { color: #6b7280; margin: 5px 0; }
+              .badge { display: inline-block; padding: 8px 20px; background: #22c55e; color: white; border-radius: 50px; font-size: 14px; font-weight: 600; margin-top: 15px; }
+              .note { margin-top: 30px; padding: 15px; background: #f3f4f6; border-radius: 12px; font-size: 14px; color: #4b5563; }
             </style>
           </head>
           <body>
-            <h1>${location.name}</h1>
-            <div class="container">
-              <div class="qr-box">
-                <img src="${qr.entry}" alt="Entry QR" />
-                <h2>Entry</h2>
-                <p>Scan when entering</p>
-                <span class="type entry">CHECK IN</span>
-              </div>
-              <div class="qr-box">
-                <img src="${qr.exit}" alt="Exit QR" />
-                <h2>Exit</h2>
-                <p>Scan when leaving</p>
-                <span class="type exit">CHECK OUT</span>
-              </div>
+            <h1>SmartQueue</h1>
+            <div class="qr-box">
+              <img src="${qr}" alt="Entry QR" />
+              <h2>${location.name}</h2>
+              <p>Scan to check in</p>
+              <span class="badge">📍 ENTRY</span>
+            </div>
+            <div class="note">
+              <strong>Note:</strong> Users exit directly from the app. No exit QR needed!
             </div>
           </body>
         </html>
@@ -137,13 +126,25 @@ const AdminQRCodes = () => {
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
                     <div>
-                        <h1 className="font-display text-xl font-bold">QR Codes</h1>
-                        <p className="text-sm text-white/70">Print or download for physical placement</p>
+                        <h1 className="font-display text-xl font-bold">Entry QR Codes</h1>
+                        <p className="text-sm text-white/70">Print for physical placement</p>
                     </div>
                 </motion.div>
             </header>
 
             <main className="px-4 py-6 space-y-6 max-w-lg mx-auto">
+                {/* Info Banner */}
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-4"
+                >
+                    <p className="text-sm text-green-800 dark:text-green-200">
+                        <strong>Simplified Flow:</strong> Users scan the entry QR to check in.
+                        They exit directly from the app - no exit QR needed!
+                    </p>
+                </motion.div>
+
                 {selectedLocation && (
                     <Button
                         variant="outline"
@@ -170,66 +171,35 @@ const AdminQRCodes = () => {
                                 className="rounded-full"
                             >
                                 <Printer className="h-4 w-4 mr-2" />
-                                Print Both
+                                Print
                             </Button>
                         </div>
 
-                        <div className="grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-700">
-                            {/* Entry QR */}
-                            <div className="p-4 text-center">
-                                <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-4 mb-3">
-                                    {qrImages[location.id]?.entry ? (
-                                        <img
-                                            src={qrImages[location.id].entry}
-                                            alt="Entry QR"
-                                            className="w-full max-w-[150px] mx-auto"
-                                        />
-                                    ) : (
-                                        <div className="w-[150px] h-[150px] mx-auto flex items-center justify-center">
-                                            <QrCode className="h-12 w-12 text-muted-foreground animate-pulse" />
-                                        </div>
-                                    )}
-                                </div>
-                                <p className="font-medium text-foreground">Entry</p>
-                                <p className="text-xs text-muted-foreground mb-3">Scan when entering</p>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleDownload(location.id, 'entry')}
-                                    className="rounded-full w-full"
-                                >
-                                    <Download className="h-3 w-3 mr-1" />
-                                    Download
-                                </Button>
+                        {/* Entry QR Only */}
+                        <div className="p-6 text-center">
+                            <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-6 mb-4 inline-block">
+                                {qrImages[location.id] ? (
+                                    <img
+                                        src={qrImages[location.id]}
+                                        alt="Entry QR"
+                                        className="w-48 h-48 mx-auto"
+                                    />
+                                ) : (
+                                    <div className="w-48 h-48 mx-auto flex items-center justify-center">
+                                        <QrCode className="h-12 w-12 text-muted-foreground animate-pulse" />
+                                    </div>
+                                )}
                             </div>
-
-                            {/* Exit QR */}
-                            <div className="p-4 text-center">
-                                <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-4 mb-3">
-                                    {qrImages[location.id]?.exit ? (
-                                        <img
-                                            src={qrImages[location.id].exit}
-                                            alt="Exit QR"
-                                            className="w-full max-w-[150px] mx-auto"
-                                        />
-                                    ) : (
-                                        <div className="w-[150px] h-[150px] mx-auto flex items-center justify-center">
-                                            <QrCode className="h-12 w-12 text-muted-foreground animate-pulse" />
-                                        </div>
-                                    )}
-                                </div>
-                                <p className="font-medium text-foreground">Exit</p>
-                                <p className="text-xs text-muted-foreground mb-3">Scan when leaving</p>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleDownload(location.id, 'exit')}
-                                    className="rounded-full w-full"
-                                >
-                                    <Download className="h-3 w-3 mr-1" />
-                                    Download
-                                </Button>
-                            </div>
+                            <p className="font-medium text-foreground text-lg">Entry QR Code</p>
+                            <p className="text-sm text-muted-foreground mb-4">Place near the entrance</p>
+                            <Button
+                                variant="outline"
+                                onClick={() => handleDownload(location.id)}
+                                className="rounded-full"
+                            >
+                                <Download className="h-4 w-4 mr-2" />
+                                Download PNG
+                            </Button>
                         </div>
                     </motion.div>
                 ))}
