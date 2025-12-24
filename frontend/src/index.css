@@ -1,0 +1,182 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500;700&display=swap');
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 220 9% 20%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 9% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 9% 20%;
+
+    --primary: 217 89% 61%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 220 9% 30%;
+
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 217 89% 95%;
+    --accent-foreground: 217 89% 45%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 217 89% 61%;
+
+    --radius: 1rem;
+
+    /* Status colors */
+    --status-safe: 142 71% 45%;
+    --status-safe-bg: 142 76% 94%;
+    --status-busy: 38 92% 50%;
+    --status-busy-bg: 48 96% 89%;
+    --status-crowded: 0 84% 60%;
+    --status-crowded-bg: 0 93% 94%;
+
+    /* Gradient */
+    --gradient-hero: linear-gradient(135deg, hsl(217 89% 61%) 0%, hsl(217 89% 51%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 14% 98%) 100%);
+    --gradient-ai: linear-gradient(135deg, hsl(280 67% 60%) 0%, hsl(217 89% 61%) 100%);
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(220 9% 20% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(220 9% 20% / 0.07), 0 2px 4px -2px hsl(220 9% 20% / 0.05);
+    --shadow-lg: 0 10px 15px -3px hsl(220 9% 20% / 0.08), 0 4px 6px -4px hsl(220 9% 20% / 0.05);
+    --shadow-xl: 0 20px 25px -5px hsl(220 9% 20% / 0.1), 0 8px 10px -6px hsl(220 9% 20% / 0.05);
+    --shadow-glow: 0 0 20px hsl(217 89% 61% / 0.3);
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217 89% 61%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 212 27% 84%;
+
+    --status-safe: 142 71% 45%;
+    --status-safe-bg: 142 76% 15%;
+    --status-busy: 38 92% 50%;
+    --status-busy-bg: 48 96% 15%;
+    --status-crowded: 0 84% 60%;
+    --status-crowded-bg: 0 93% 15%;
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Google Sans', 'Roboto', sans-serif;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-lg;
+  }
+
+  .shadow-card {
+    box-shadow: var(--shadow-md);
+  }
+
+  .shadow-card-hover {
+    box-shadow: var(--shadow-lg);
+  }
+
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+
+  .gradient-ai {
+    background: var(--gradient-ai);
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .heatmap-pulse {
+    animation: heatmap-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes heatmap-pulse {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 0.7;
+    }
+    50% {
+      transform: scale(1.3);
+      opacity: 0.4;
+    }
+  }
+
+  .safe-zone {
+    @apply bg-[hsl(var(--status-safe))] text-white;
+  }
+
+  .busy-zone {
+    @apply bg-[hsl(var(--status-busy))] text-white;
+  }
+
+  .crowded-zone {
+    @apply bg-[hsl(var(--status-crowded))] text-white;
+  }
+}
