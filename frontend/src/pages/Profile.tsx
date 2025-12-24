@@ -3,11 +3,55 @@ import { User, Settings, Bell, Shield, HelpCircle, LogOut, ChevronRight, Clock, 
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { useQueue } from '@/contexts/QueueContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 const Profile = () => {
   const { tickets } = useQueue();
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+  const [userStats, setUserStats] = useState({ totalTimeSaved: 0, totalQueuesJoined: 0 });
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
-  const totalTimesSaved = tickets.length * 12; // Mock calculation
+  // Fetch user stats from Firestore
+  useEffect(() => {
+    const fetchUserStats = async () => {
+      if (user) {
+        try {
+          const userRef = doc(db, 'users', user.uid);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            setUserStats({
+              totalTimeSaved: data.totalTimeSaved || 0,
+              totalQueuesJoined: data.totalQueuesJoined || 0,
+            });
+          }
+        } catch (error) {
+          console.error('Error fetching user stats:', error);
+        }
+      }
+    };
+    fetchUserStats();
+  }, [user]);
+
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    try {
+      await signOut();
+      navigate('/login', { replace: true });
+    } catch (error) {
+      console.error('Error signing out:', error);
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
+  const totalTimesSaved = userStats.totalTimeSaved || tickets.length * 12;
+  const totalQueues = userStats.totalQueuesJoined || tickets.length;
 
   const menuItems = [
     { icon: Bell, label: 'Notifications', hasToggle: true },
@@ -24,11 +68,23 @@ const Profile = () => {
           animate={{ opacity: 1, y: 0 }}
           className="text-center"
         >
-          <div className="w-20 h-20 bg-white/20 rounded-full mx-auto mb-4 flex items-center justify-center ring-4 ring-white/30">
-            <User className="h-10 w-10 text-primary-foreground" />
-          </div>
-          <h1 className="font-display text-xl font-bold text-primary-foreground">Student User</h1>
-          <p className="text-sm text-primary-foreground/80">student@campus.edu</p>
+          {user?.photoURL ? (
+            <img
+              src={user.photoURL}
+              alt="Profile"
+              className="w-20 h-20 rounded-full mx-auto mb-4 ring-4 ring-white/30 object-cover"
+            />
+          ) : (
+            <div className="w-20 h-20 bg-white/20 rounded-full mx-auto mb-4 flex items-center justify-center ring-4 ring-white/30">
+              <User className="h-10 w-10 text-primary-foreground" />
+            </div>
+          )}
+          <h1 className="font-display text-xl font-bold text-primary-foreground">
+            {user?.displayName || 'Student User'}
+          </h1>
+          <p className="text-sm text-primary-foreground/80">
+            {user?.email || 'student@campus.edu'}
+          </p>
         </motion.div>
       </header>
 
@@ -51,7 +107,7 @@ const Profile = () => {
               <TrendingUp className="h-4 w-4" />
               <span className="text-xs">Queues Joined</span>
             </div>
-            <p className="font-display text-2xl font-bold text-foreground">{tickets.length}</p>
+            <p className="font-display text-2xl font-bold text-foreground">{totalQueues}</p>
           </div>
         </motion.div>
 
@@ -108,10 +164,12 @@ const Profile = () => {
         >
           <Button
             variant="ghost"
+            onClick={handleSignOut}
+            disabled={isSigningOut}
             className="w-full h-12 rounded-2xl font-medium text-destructive hover:text-destructive hover:bg-destructive/10"
           >
             <LogOut className="h-5 w-5 mr-3" />
-            Sign Out
+            {isSigningOut ? 'Signing Out...' : 'Sign Out'}
           </Button>
         </motion.div>
 
